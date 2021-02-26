@@ -1,0 +1,97 @@
+#_                   _ _ _  _ _____ _  _
+#| | _______   ____ _| | | || |___  | || |
+#| |/ / _ \ \ / / _` | | | || |_ / /| || |_
+#|   <  __/\ V / (_| | | |__   _/ / |__   _|
+#|_|\_\___| \_/ \__,_|_|_|  |_|/_/     |_|
+
+#Maintainer: kevall474 <kevall474@tuta.io> <https://github.com/kevall474>
+#Credits: Laurent Carlier <lordheavym@gmail.com>
+#Credits: lod <aur@cyber-anlage.de>
+
+#######################################
+
+#Set compiler to build amdvlk package
+#Set '1' to build with GCC
+#Set '2' to build with CLANG
+#Default is empty. It will build with GCC. To build with different compiler just use : env _compiler=(1 or 2) makepkg -s
+if [ -z ${_compiler+x} ]; then
+  _compiler=
+fi
+
+#######################################
+
+pkgname=lib32-amdvlk-git
+pkgdesc="AMD's standalone Vulkan driver (dev branch) (32 bit) (git release)"
+pkgname=("$pkgbase")
+pkgver=2021.Q1.3
+pkgrel=1
+arch=('i686' 'x86_64')
+url="https://github.com/GPUOpen-Drivers"
+license=('MIT')
+makedepends=('perl-xml-xpath' 'python' 'wayland' 'libxrandr' 'xorg-server-devel' 'cmake' 'ninja' 'git' 'python2' 'repo'
+             'lib32-wayland' 'lib32-libxrandr')
+conflicts=('lib32-amdvlk' 'lib32-amdvlk-master-git' 'lib32-amdvlk-dev-git')
+provides=('vulkan-driver' 'lib32-amdvlk')
+
+prepare(){
+  if ! dir vulkandriver; then
+    mkdir vulkandriver
+  fi
+
+  cd vulkandriver
+
+  repo init -u https://github.com/GPUOpen-Drivers/AMDVLK.git -b dev
+
+  repo sync
+}
+
+pkgver() {
+  cd ${srcdir}/vulkandriver/drivers/AMDVLK
+  echo 2021.Q1.3.$(date -I | sed 's/-/_/' | sed 's/-/_/').$(git rev-list --count HEAD).$(git rev-parse --short HEAD)
+}
+
+build(){
+if [[ $_compiler = "1" ]]; then
+  export CC="gcc"
+  export CXX="g++"
+elif [[ $_compiler = "2" ]]; then
+  export CC="clang"
+  export CXX="clang++"
+else
+  export CC="gcc"
+  export CXX="g++"
+fi
+export PKG_CONFIG_PATH="/usr/lib32/pkgconfig"
+
+  cd ${srcdir}/vulkandriver/drivers/spvgen/external
+  python2 fetch_external_sources.py
+
+  cd ${srcdir}/vulkandriver/drivers/xgl
+
+  if dir builds; then
+    rm -rf -v builds
+  fi
+
+  cmake -H. -G Ninja -Bbuilds/Release32 \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_FLAGS=-m32 \
+  -DCMAKE_CXX_FLAGS=-m32 \
+  -DLLVM_TARGET_ARCH:STRING=i686 \
+  -DLLVM_DEFAULT_TARGET_TRIPLE="i686-pc-linux-gnu" \
+  -DBUILD_WAYLAND_SUPPORT=On
+
+  ninja -C builds/Release32
+fi
+}
+
+package_lib32-amdvlk-git(){
+  install -m755 -d "${pkgdir}"/usr/lib32
+  install -m755 -d "${pkgdir}"/usr/share/vulkan/icd.d
+  install -m755 -d "${pkgdir}"/usr/share/licenses/${pkgname}
+
+  install ${srcdir}/vulkandriver/drivers/xgl/builds/Release32/icd/amdvlk32.so "${pkgdir}"/usr/lib32/
+  install ${srcdir}/vulkandriver/drivers/AMDVLK/json/Redhat/amd_icd32.json "${pkgdir}"/usr/share/vulkan/icd.d/
+  install ${srcdir}/vulkandriver/drivers/AMDVLK/LICENSE.txt "${pkgdir}"/usr/share/licenses/${pkgname}/
+
+  sed -i "s#/lib32#/lib#g" "${pkgdir}"/usr/share/vulkan/icd.d/amd_icd32.json
+}
